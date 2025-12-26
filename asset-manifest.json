@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/annotate-it/static/css/main.59616e06.css",
+    "main.js": "/annotate-it/static/js/main.9a36aa66.js",
+    "static/js/453.9c49ee11.chunk.js": "/annotate-it/static/js/453.9c49ee11.chunk.js",
+    "index.html": "/annotate-it/index.html",
+    "main.59616e06.css.map": "/annotate-it/static/css/main.59616e06.css.map",
+    "main.9a36aa66.js.map": "/annotate-it/static/js/main.9a36aa66.js.map",
+    "453.9c49ee11.chunk.js.map": "/annotate-it/static/js/453.9c49ee11.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.59616e06.css",
+    "static/js/main.9a36aa66.js"
+  ]
+}
