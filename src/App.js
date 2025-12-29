@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
-import { ReactSketchCanvas } from "react-sketch-canvas";
+import IpadOptimizedCanvas from "./IpadOptimizedCanvas";
 import { HexColorPicker } from "react-colorful";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import "./App.css";
 
 /**
@@ -18,12 +19,12 @@ import "./App.css";
  */
 function App() {
   // References and State
-  /** @type {React.RefObject<ReactSketchCanvas>} Reference to the canvas component */
+  /** @type {React.RefObject} Reference to the canvas component */
   const canvasRef = useRef(null);
   
   /** @type {[string, Function]} Background image URL (default or uploaded) */
   const [backgroundImage, setBackgroundImage] = useState(
-    `${process.env.PUBLIC_URL}/default-image.jpg` // Default placeholder (local resource)
+    `${process.env.PUBLIC_URL}/default-image.png` // Default placeholder (local resource)
   );
   
   /** @type {[string, Function]} Current stroke color in hex format (default: red) */
@@ -41,6 +42,30 @@ function App() {
   /** @type {[boolean, Function]} Whether color picker is visible */
   const [showColorPicker, setShowColorPicker] = useState(false);
 
+  /** @type {[boolean, Function]} Whether digitization is in progress */
+  const [isDigitizing, setIsDigitizing] = useState(false);
+  
+  /** @type {[string, Function]} Textual representation from Gemini */
+  const [digitizedText, setDigitizedText] = useState(null);
+  
+  /** @type {[string, Function]} Error message from digitization */
+  const [digitizationError, setDigitizationError] = useState(null);
+  
+  /** @type {[boolean, Function]} Whether to show the digitization result modal */
+  const [showDigitizationResult, setShowDigitizationResult] = useState(false);
+  
+  /** @type {[string, Function]} User's Gemini API key (stored in localStorage) */
+  const [apiKey, setApiKey] = useState(() => {
+    // Load API key from localStorage on mount
+    return localStorage.getItem('gemini_api_key') || '';
+  });
+  
+  /** @type {[boolean, Function]} Whether to show API key settings modal */
+  const [showApiKeySettings, setShowApiKeySettings] = useState(false);
+  
+  /** @type {[string, Function]} Temporary API key input value */
+  const [apiKeyInput, setApiKeyInput] = useState('');
+
   /**
    * Updates the canvas erase mode when the eraseMode state changes.
    * This effect ensures the canvas component reflects the current erase mode.
@@ -50,6 +75,17 @@ function App() {
       canvasRef.current.eraseMode(eraseMode);
     }
   }, [eraseMode]);
+
+  /**
+   * Save API key to localStorage when it changes
+   */
+  useEffect(() => {
+    if (apiKey) {
+      localStorage.setItem('gemini_api_key', apiKey);
+    } else {
+      localStorage.removeItem('gemini_api_key');
+    }
+  }, [apiKey]);
 
 
   /**
@@ -183,10 +219,168 @@ function App() {
     }
   };
 
+  /**
+   * Gets the combined image (background + annotations) as a base64 string.
+   * Reuses the logic from handleExport but returns base64 instead of downloading.
+   * 
+   * @returns {Promise<string>} Base64 encoded image data URL
+   */
+  const getCombinedImageAsBase64 = async () => {
+    if (!canvasRef.current) {
+      throw new Error("Canvas reference is not available");
+    }
+
+    // Export the canvas with annotations
+    const data = await canvasRef.current.exportImage("png");
+    
+    // Create a new canvas to combine background and annotations
+    const canvas = document.createElement("canvas");
+    canvas.width = 1024;
+    canvas.height = 768;
+    const ctx = canvas.getContext("2d");
+
+    // Load and draw the background image
+    const bgImg = new Image();
+    bgImg.crossOrigin = "anonymous";
+    
+    await new Promise((resolve, reject) => {
+      bgImg.onload = () => {
+        // Draw background with the same sizing as displayed
+        ctx.save();
+        if (bgSize === "contain") {
+          const scale = Math.min(1024 / bgImg.width, 768 / bgImg.height);
+          const x = (1024 - bgImg.width * scale) / 2;
+          const y = (768 - bgImg.height * scale) / 2;
+          ctx.drawImage(bgImg, x, y, bgImg.width * scale, bgImg.height * scale);
+        } else if (bgSize === "cover") {
+          const scale = Math.max(1024 / bgImg.width, 768 / bgImg.height);
+          const x = (1024 - bgImg.width * scale) / 2;
+          const y = (768 - bgImg.height * scale) / 2;
+          ctx.drawImage(bgImg, x, y, bgImg.width * scale, bgImg.height * scale);
+        } else {
+          ctx.drawImage(bgImg, 0, 0, 1024, 768);
+        }
+        ctx.restore();
+        resolve();
+      };
+      bgImg.onerror = reject;
+      bgImg.src = backgroundImage;
+    });
+
+    // Draw the annotations on top
+    const annotationImg = new Image();
+    await new Promise((resolve, reject) => {
+      annotationImg.onload = () => {
+        ctx.drawImage(annotationImg, 0, 0);
+        resolve();
+      };
+      annotationImg.onerror = reject;
+      annotationImg.src = data;
+    });
+
+    // Convert to base64
+    return canvas.toDataURL("image/png");
+  };
+
+  /**
+   * Converts base64 data URL to a format suitable for Gemini API.
+   * Extracts the base64 string without the data URL prefix.
+   * 
+   * @param {string} dataUrl - Base64 data URL (e.g., "data:image/png;base64,...")
+   * @returns {string} Base64 string without prefix
+   */
+  const base64ToGeminiFormat = (dataUrl) => {
+    return dataUrl.split(",")[1];
+  };
+
+  /**
+   * Handles saving the API key from the settings modal
+   */
+  const handleSaveApiKey = () => {
+    if (apiKeyInput.trim()) {
+      setApiKey(apiKeyInput.trim());
+      setShowApiKeySettings(false);
+      setApiKeyInput('');
+    }
+  };
+
+  /**
+   * Handles clearing the API key
+   */
+  const handleClearApiKey = () => {
+    setApiKey('');
+    setApiKeyInput('');
+    setShowApiKeySettings(false);
+  };
+
+  /**
+   * Sends the annotated image to Gemini API and gets a textual representation.
+   * Uses API key from localStorage (user-provided).
+   */
+  const handleDigitize = async () => {
+    try {
+      setIsDigitizing(true);
+      setDigitizationError(null);
+      setDigitizedText(null);
+
+      // Check for API key
+      if (!apiKey) {
+        setShowApiKeySettings(true);
+        setIsDigitizing(false);
+        return;
+      }
+
+      // Get the combined image as base64
+      const base64DataUrl = await getCombinedImageAsBase64();
+      const base64Image = base64ToGeminiFormat(base64DataUrl);
+
+      // Initialize Gemini
+      const genAI = new GoogleGenerativeAI(apiKey);
+      // Use gemini-2.5-flash for image analysis (supports vision tasks)
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      // Prepare the image part
+      const imagePart = {
+        inlineData: {
+          data: base64Image,
+          mimeType: "image/png",
+        },
+      };
+
+      // Create prompt for textual representation
+      const prompt = `Provide a formatted textual representation of this medical form image in a plain text field - value format. Don't make any assumptions, just extract the data as it is.`;
+
+      // Generate content
+      const result = await model.generateContent([prompt, imagePart]);
+      const response = await result.response;
+      const text = response.text();
+
+      setDigitizedText(text);
+      setShowDigitizationResult(true);
+    } catch (error) {
+      console.error("Error digitizing image:", error);
+      
+      // Provide more helpful error messages
+      let errorMessage = error.message || "Failed to digitize image. Please try again.";
+      
+      if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+        errorMessage = "Model not found. Please check that your API key has access to Gemini Pro Vision model. You may need to enable the Generative Language API in Google Cloud Console.";
+      } else if (errorMessage.includes("API key") || errorMessage.includes("401") || errorMessage.includes("403")) {
+        errorMessage = "Invalid API key. Please check your API key in settings and ensure it's valid.";
+      }
+      
+      setDigitizationError(errorMessage);
+      setShowDigitizationResult(true);
+    } finally {
+      setIsDigitizing(false);
+    }
+  };
+
 
   return (
     <div className="app-container">
       <h1>Demo Annotation App</h1>
+      <span style={{fontSize: '10px', position: 'absolute', top: 4, right: 8, opacity: 0.5}}>build id 1.001</span>
 
       {/* Toolbar */}
       <div className="toolbar">
@@ -289,11 +483,28 @@ function App() {
         <button onClick={handleRedo}>Redo</button>
         <button onClick={handleClear} className="btn-danger">Clear All</button>
         <button onClick={handleExport} className="btn-success">Save Image</button>
+        <button 
+          onClick={handleDigitize} 
+          className="btn-primary"
+          disabled={isDigitizing}
+        >
+          {isDigitizing ? "Digitizing..." : "Digitize Image"}
+        </button>
+        <button 
+          onClick={() => {
+            setApiKeyInput(apiKey);
+            setShowApiKeySettings(true);
+          }}
+          className="btn-secondary"
+          title="Configure Gemini API Key"
+        >
+          ⚙️ API Key
+        </button>
       </div>
 
       {/* Canvas Area */}
       <div className="canvas-wrapper">
-        <ReactSketchCanvas
+        <IpadOptimizedCanvas
           ref={canvasRef}
           style={{
             border: "2px solid #333",
@@ -311,6 +522,145 @@ function App() {
           canvasColor="transparent"
         />
       </div>
+
+      {/* Digitization Result Modal */}
+      {showDigitizationResult && (
+        <div className="modal-overlay" onClick={() => setShowDigitizationResult(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Digitized Image Text</h2>
+              <button 
+                className="modal-close"
+                onClick={() => setShowDigitizationResult(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              {isDigitizing ? (
+                <div className="loading-spinner">
+                  <p>Processing image with Gemini...</p>
+                </div>
+              ) : digitizationError ? (
+                <div className="error-message">
+                  <p><strong>Error:</strong> {digitizationError}</p>
+                  <p style={{ fontSize: "0.9rem", marginTop: "10px", color: "#666" }}>
+                    Please check your API key in settings.
+                  </p>
+                </div>
+              ) : digitizedText ? (
+                <div className="digitized-text">
+                  <p>{digitizedText}</p>
+                </div>
+              ) : null}
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowDigitizationResult(false)}>Close</button>
+              {digitizedText && (
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(digitizedText);
+                    alert("Text copied to clipboard!");
+                  }}
+                  className="btn-success"
+                >
+                  Copy Text
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API Key Settings Modal */}
+      {showApiKeySettings && (
+        <div className="modal-overlay" onClick={() => setShowApiKeySettings(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Gemini API Key Settings</h2>
+              <button 
+                className="modal-close"
+                onClick={() => setShowApiKeySettings(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: "20px" }}>
+                <p style={{ marginBottom: "10px", color: "#666" }}>
+                  Enter your Google Gemini API key. This key is stored locally in your browser and never sent to our servers.
+                </p>
+                <p style={{ marginBottom: "15px", fontSize: "0.9rem", color: "#666" }}>
+                  <strong>Get your API key:</strong>{" "}
+                  <a 
+                    href="https://makersuite.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ color: "#007bff" }}
+                  >
+                    https://makersuite.google.com/app/apikey
+                  </a>
+                </p>
+                <label style={{ display: "block", marginBottom: "8px", fontWeight: "600" }}>
+                  API Key:
+                </label>
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="Enter your Gemini API key"
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "1rem",
+                    boxSizing: "border-box"
+                  }}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveApiKey();
+                    }
+                  }}
+                />
+                {apiKey && (
+                  <p style={{ marginTop: "10px", fontSize: "0.85rem", color: "#28a745" }}>
+                    ✓ API key is currently set (hidden for security)
+                  </p>
+                )}
+              </div>
+              <div style={{ 
+                padding: "15px", 
+                backgroundColor: "#f8f9fa", 
+                borderRadius: "8px",
+                fontSize: "0.9rem",
+                color: "#666"
+              }}>
+                <strong>Security Note:</strong> Your API key is stored only in your browser's localStorage. 
+                It is never transmitted to any server except Google's Gemini API when you use the digitize feature.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowApiKeySettings(false)}>Cancel</button>
+              {apiKey && (
+                <button 
+                  onClick={handleClearApiKey}
+                  className="btn-danger"
+                >
+                  Clear Key
+                </button>
+              )}
+              <button 
+                onClick={handleSaveApiKey}
+                className="btn-success"
+                disabled={!apiKeyInput.trim()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
