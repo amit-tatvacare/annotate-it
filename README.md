@@ -17,6 +17,9 @@ A modern, interactive web application for annotating images with drawing tools. 
   - Undo/Redo functionality
   - Clear all annotations
   - Export annotated image as PNG
+- **AI-Powered Digitization**: 
+  - Convert annotated images to detailed textual descriptions using Google Gemini AI
+  - Secure API key management (user-provided, stored locally)
 - **User-Friendly Interface**: Clean, modern UI with intuitive controls
 
 ## 🛠️ Technologies Used
@@ -69,6 +72,10 @@ The application will open at [http://localhost:3000](http://localhost:3000) in y
    - Use "Redo" to restore an undone action
    - Use "Clear All" to remove all annotations
 6. **Export**: Click "Save Image" to download your annotated image as a PNG file
+7. **Digitize Image**: 
+   - Click "⚙️ API Key" to configure your Gemini API key (get it from [Google AI Studio](https://makersuite.google.com/app/apikey))
+   - Click "Digitize Image" to get a detailed textual description of your annotated image
+   - The API key is stored securely in your browser's localStorage
 
 ## 📜 Available Scripts
 
@@ -152,6 +159,15 @@ This will:
 1. Build the production-ready app
 2. Deploy it to the `gh-pages` branch
 3. Make it available at the configured GitHub Pages URL
+
+### 🔐 API Key Security for GitHub Pages
+
+**Important:** This app uses a secure, user-provided API key approach. Users enter their own Gemini API key, which is stored only in their browser's localStorage. This ensures:
+- ✅ No API keys in source code or environment variables
+- ✅ Safe for public GitHub repositories
+- ✅ Each user manages their own API key
+
+For detailed security information and alternative deployment strategies, see [SECURITY.md](./SECURITY.md).
 
 ## 🧪 Testing
 

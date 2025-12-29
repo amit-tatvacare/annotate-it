@@ -4,6 +4,7 @@
   "private": true,
   "homepage": "https://amit-tatvacare.github.io/annotate-it",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
