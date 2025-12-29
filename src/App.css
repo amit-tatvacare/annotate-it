@@ -104,4 +104,24 @@ button:disabled:hover {
   align-items: center;
   width: 100%;
   max-width: 1024px;
+  /* iPad optimizations */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Prevent text selection and context menus on touch */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Optimize canvas for iPad stylus */
+.canvas-wrapper canvas,
+.canvas-wrapper > div {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Improve rendering performance on iPad */
+  will-change: contents;
+  /* Prevent default touch behaviors */
+  -webkit-tap-highlight-color: transparent;
 }

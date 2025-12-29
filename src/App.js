@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { ReactSketchCanvas } from "react-sketch-canvas";
+import IpadOptimizedCanvas from "./IpadOptimizedCanvas";
 import { HexColorPicker } from "react-colorful";
 import "./App.css";
 
@@ -18,7 +18,7 @@ import "./App.css";
  */
 function App() {
   // References and State
-  /** @type {React.RefObject<ReactSketchCanvas>} Reference to the canvas component */
+  /** @type {React.RefObject} Reference to the canvas component */
   const canvasRef = useRef(null);
   
   /** @type {[string, Function]} Background image URL (default or uploaded) */
@@ -187,6 +187,7 @@ function App() {
   return (
     <div className="app-container">
       <h1>Demo Annotation App</h1>
+      <span style={{fontSize: '10px', position: 'absolute', top: 4, right: 8, opacity: 0.5}}>build id 1.001</span>
 
       {/* Toolbar */}
       <div className="toolbar">
@@ -293,7 +294,7 @@ function App() {
 
       {/* Canvas Area */}
       <div className="canvas-wrapper">
-        <ReactSketchCanvas
+        <IpadOptimizedCanvas
           ref={canvasRef}
           style={{
             border: "2px solid #333",
